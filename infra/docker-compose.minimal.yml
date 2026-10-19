@@ -1,0 +1,25 @@
+# CONSTANTIN — Minimal VPS (1vCPU/2GB, €12/мес) — только Telegram-бот
+# Для стадии 1 (10ч): 1 бот + Postgres, без OpenClaw (экономия RAM)
+# Когда вырастешь → мигрируй на docker-compose.yml (добавишь n8n, OpenClaw)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-constantin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-constantin}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  bot:
+    build: ../mvp/telegram-ai-bot
+    restart: unless-stopped
+    env_file: ../mvp/telegram-ai-bot/.env
+    depends_on:
+      - postgres
+    # healthcheck: бот сам пингует TG getMe каждые 30с
+
+volumes:
+  pgdata:
