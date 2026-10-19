@@ -1,0 +1,95 @@
+# CONSTANTIN — VPS-фабрика 24/7 (Standard: 2vCPU/4GB, €28/мес)
+# Деплой: scp -r infra/* root@vps:/opt/constantin && ssh root@vps "cd /opt/constantin && docker compose up -d"
+# Требует: Docker + Compose v2, .env из .env.example
+# Альтернатива: поставь Coolify (1 команда) и деплой через UI — см. README.md
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-constantin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-constantin}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-constantin}"]
+      interval: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    command: redis-server --appendonly yes
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      GENERIC_TIMEZONE: ${TZ:-Europe/Almaty}
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-constantin}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER:-constantin}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-changeme-32-chars-min}
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-changeme}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # AI-агент #1: OpenClaw (personal assistant, Telegram-native, 50+ интеграций)
+  # Док: https://github.com/openclaw/openclaw — 300k★ MIT
+  # Требует: 2vCPU/4GB, если с browser → 8GB. Без него — Hermes легче.
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18789:18789"
+    volumes:
+      - openclaw_data:/app/data
+      - openclaw_config:/app/config
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18789/health"]
+      interval: 30s
+      retries: 3
+
+  # Мониторинг: Uptime Kuma (пинг твоего бота/SaaS) + авто-алерт в TG
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - kuma_data:/app/data
+
+  # Пример твоего SaaS/Mini App (Next.js)
+  # Собери локально `docker build -t app:latest .` и раскомментируй:
+  # app:
+  #   image: app:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "127.0.0.1:3000:3000"
+  #   env_file: .env
+  #   depends_on:
+  #     - postgres
+  #     - redis
+
+volumes:
+  pgdata:
+  redisdata:
+  n8n_data:
+  openclaw_data:
+  openclaw_config:
+  kuma_data:
